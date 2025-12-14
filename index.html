@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLIR Viewer</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- PEG.js library (local copy for reliability) -->
+    <script src="peg.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MLIR Viewer</h1>
+            <button id="loadSample">Load Sample</button>
+            <button id="toggleConfig">⚙️ Display Options</button>
+        </header>
+        
+        <div id="configPanel" class="config-panel" style="display: none;">
+            <h3>Display Options</h3>
+            <div class="config-section">
+                <label>
+                    <input type="checkbox" id="showTypes" checked>
+                    Show I/O Types
+                </label>
+            </div>
+            <div class="config-section">
+                <h4>Inline Attributes (comma-separated keys):</h4>
+                <input type="text" id="inlineAttrs" placeholder="e.g., fastmath, value">
+            </div>
+            <div class="config-section">
+                <h4>Inline Type Attributes (comma-separated keys):</h4>
+                <input type="text" id="inlineTypeAttrs" placeholder="e.g., bufferLoc">
+            </div>
+            <button id="applyConfig">Apply</button>
+        </div>
+        
+        <div class="main-content">
+            <div class="editor-section">
+                <h2>MLIR Input</h2>
+                <textarea id="mlirInput" placeholder="Paste your MLIR code here..."></textarea>
+                <button id="parseBtn">Parse & Display</button>
+            </div>
+            
+            <div class="viewer-section">
+                <div class="main-area">
+                    <h2>Simplified View</h2>
+                    <div id="simplifiedView"></div>
+                </div>
+                
+                <div class="info-pane">
+                    <h2>Details</h2>
+                    <div id="detailsContent">
+                        <p class="placeholder">Click on an SSA value or operation to see details</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
