@@ -121,6 +121,8 @@ class MLIRViewer {
         
         this.parsedLines = [];
         this.locationAliases = {};
+        this.operationById = {}; // Map of operation IDs to operation objects
+        let nextOpId = 0;
         
         // First pass: extract location aliases
         lines.forEach(line => {
@@ -164,10 +166,30 @@ class MLIRViewer {
                     const parsed = this.parser.parse(fullOp.trim());
                     console.log('Parse successful:', parsed);
                     if (parsed && parsed.length > 0) {
-                        this.parsedLines.push({
+                        const op = {
                             ...parsed[0],
-                            original: fullOp
-                        });
+                            original: fullOp,
+                            _id: nextOpId++
+                        };
+                        // Assign IDs to nested operations too
+                        if (op.regions) {
+                            op.regions = op.regions.map(region =>
+                                region.map(nestedOp => ({
+                                    ...nestedOp,
+                                    _id: nextOpId++
+                                }))
+                            );
+                        }
+                        this.parsedLines.push(op);
+                        this.operationById[op._id] = op;
+                        // Store nested ops in the map too
+                        if (op.regions) {
+                            op.regions.forEach(region => {
+                                region.forEach(nestedOp => {
+                                    this.operationById[nestedOp._id] = nestedOp;
+                                });
+                            });
+                        }
                     }
                 } catch (error) {
                     console.error(`Failed to parse operation:`, fullOp);
@@ -218,12 +240,12 @@ class MLIRViewer {
 
             // Output SSA value
             if (parsed.output) {
-                html += `<span class="ssa-value" data-index="${index}" data-type="output">${this.escapeHtml(parsed.output)}</span> = `;
+                html += `<span class="ssa-value">${this.escapeHtml(parsed.output)}</span> = `;
             }
 
-            // Operation name
+            // Operation name - use operation ID
             if (parsed.opName) {
-                html += `<span class="op-name" data-index="${index}">"${this.escapeHtml(parsed.opName)}"</span>`;
+                html += `<span class="op-name" data-op-id="${parsed._id}">"${this.escapeHtml(parsed.opName)}"</span>`;
             }
 
             // Input SSA values
@@ -231,7 +253,7 @@ class MLIRViewer {
                 html += '(';
                 parsed.inputs.forEach((input, i) => {
                     if (i > 0) html += ', ';
-                    html += `<span class="ssa-value" data-index="${index}" data-type="input" data-input-idx="${i}">${this.escapeHtml(input)}</span>`;
+                    html += `<span class="ssa-value">${this.escapeHtml(input)}</span>`;
                 });
                 html += ')';
             } else {
@@ -309,8 +331,10 @@ class MLIRViewer {
                 
                 parsed.regions.forEach((region, regionIdx) => {
                     if (region.length > 0) {
-                        region.forEach(op => {
-                            const opDiv = this.renderOperation(op, `${index}-${regionIdx}`);
+                        region.forEach((op, opIdx) => {
+                            const opDiv = this.renderOperation(op, `${index}-${regionIdx}-${opIdx}`);
+                            // Store reference to the operation object
+                            opDiv.dataset.opRef = JSON.stringify(op);
                             regionContainer.appendChild(opDiv);
                         });
                     }
@@ -340,12 +364,12 @@ class MLIRViewer {
 
         // Output SSA value
         if (parsed.output) {
-            html += `<span class="ssa-value" data-index="${indexStr}" data-type="output">${this.escapeHtml(parsed.output)}</span> = `;
+            html += `<span class="ssa-value">${this.escapeHtml(parsed.output)}</span> = `;
         }
 
-        // Operation name
+        // Operation name - use operation ID for click handling
         if (parsed.opName) {
-            html += `<span class="op-name" data-index="${indexStr}">"${this.escapeHtml(parsed.opName)}"</span>`;
+            html += `<span class="op-name" data-op-id="${parsed._id}">"${this.escapeHtml(parsed.opName)}"</span>`;
         }
 
         // Input SSA values
@@ -490,56 +514,66 @@ class MLIRViewer {
         // SSA value clicks
         document.querySelectorAll('.ssa-value').forEach(elem => {
             elem.addEventListener('click', (e) => {
-                const index = parseInt(e.target.dataset.index);
-                const type = e.target.dataset.type;
-                const inputIdx = e.target.dataset.inputIdx;
-                this.showSSADetails(index, type, inputIdx);
+                const ssaValue = e.target.textContent.trim();
+                this.showSSADetails(ssaValue);
             });
         });
 
-        // Operation name clicks
+        // Operation name clicks - use operation ID
         document.querySelectorAll('.op-name').forEach(elem => {
             elem.addEventListener('click', (e) => {
-                const index = parseInt(e.target.dataset.index);
-                this.showOpDetails(index);
+                const opId = parseInt(e.target.dataset.opId);
+                this.showOpDetails(opId);
             });
         });
     }
 
-    showSSADetails(lineIndex, type, inputIdx) {
-        const parsed = this.parsedLines[lineIndex];
+    showSSADetails(ssaValue) {
         const detailsDiv = document.getElementById('detailsContent');
         
-        let html = '<div class="detail-section">';
+        // Find the definition of this SSA value
+        const definition = this.findSSADefinition(ssaValue);
         
-        if (type === 'output') {
-            html += `<h3>SSA Value: ${this.escapeHtml(parsed.output)}</h3>`;
+        if (!definition) {
+            detailsDiv.innerHTML = `<p class="placeholder">Could not find definition for ${this.escapeHtml(ssaValue)}</p>`;
+            return;
+        }
+        
+        let html = '<div class="detail-section">';
+        html += `<h3>SSA Value: ${this.escapeHtml(ssaValue)}</h3>`;
+        html += '<div class="detail-item">';
+        html += `<span class="detail-label">Type:</span>`;
+        html += `<span class="detail-value type-info">${this.escapeHtml(definition.outputType || 'unknown')}</span>`;
+        html += '</div>';
+        html += '<div class="detail-item">';
+        html += `<span class="detail-label">Defined by:</span>`;
+        html += `<span class="detail-value">${this.escapeHtml(definition.opName || 'unknown')}</span>`;
+        html += '</div>';
+        
+        if (definition.location) {
+            const inlinedLoc = this.inlineLocationAlias(definition.location);
             html += '<div class="detail-item">';
-            html += `<span class="detail-label">Type:</span>`;
-            html += `<span class="detail-value type-info">${this.escapeHtml(parsed.outputType || 'unknown')}</span>`;
-            html += '</div>';
-            html += '<div class="detail-item">';
-            html += `<span class="detail-label">Defined by:</span>`;
-            html += `<span class="detail-value">${this.escapeHtml(parsed.opName || 'unknown')}</span>`;
-            html += '</div>';
-        } else if (type === 'input') {
-            const inputName = parsed.inputs[inputIdx];
-            const inputType = parsed.inputTypes[inputIdx] || 'unknown';
-            html += `<h3>SSA Value: ${this.escapeHtml(inputName)}</h3>`;
-            html += '<div class="detail-item">';
-            html += `<span class="detail-label">Type:</span>`;
-            html += `<span class="detail-value type-info">${this.escapeHtml(inputType)}</span>`;
-            html += '</div>';
-            html += '<div class="detail-item">';
-            html += `<span class="detail-label">Used by:</span>`;
-            html += `<span class="detail-value">${this.escapeHtml(parsed.opName || 'unknown')}</span>`;
+            html += `<span class="detail-label">Defined at:</span>`;
+            html += `<span class="detail-value">${this.escapeHtml(inlinedLoc)}</span>`;
             html += '</div>';
         }
         
-        if (parsed.location) {
+        // Find all uses of this SSA value
+        const uses = this.findSSAUses(ssaValue);
+        if (uses.length > 0) {
             html += '<div class="detail-item">';
-            html += `<span class="detail-label">Location:</span>`;
-            html += `<span class="detail-value">${this.escapeHtml(parsed.location)}</span>`;
+            html += `<span class="detail-label">Used by:</span>`;
+            html += '<div style="margin-top: 8px;">';
+            uses.forEach(use => {
+                html += `<div style="margin-left: 20px; margin-bottom: 4px;">`;
+                html += `${this.escapeHtml(use.opName)}`;
+                if (use.location) {
+                    const inlinedLoc = this.inlineLocationAlias(use.location);
+                    html += ` <span style="color: #6a9955;">at ${this.escapeHtml(inlinedLoc)}</span>`;
+                }
+                html += `</div>`;
+            });
+            html += '</div>';
             html += '</div>';
         }
         
@@ -547,9 +581,61 @@ class MLIRViewer {
         detailsDiv.innerHTML = html;
     }
 
-    showOpDetails(lineIndex) {
-        const parsed = this.parsedLines[lineIndex];
+    findSSAUses(ssaValue) {
+        const uses = [];
+        for (const parsed of this.parsedLines) {
+            if (parsed.inputs && parsed.inputs.includes(ssaValue)) {
+                uses.push(parsed);
+            }
+            // Also search in regions
+            if (parsed.regions) {
+                for (const region of parsed.regions) {
+                    for (const op of region) {
+                        if (op.inputs && op.inputs.includes(ssaValue)) {
+                            uses.push(op);
+                        }
+                    }
+                }
+            }
+        }
+        return uses;
+    }
+
+    findSSADefinition(ssaValue) {
+        // Search through all parsed lines to find where this SSA value is defined
+        for (const parsed of this.parsedLines) {
+            if (parsed.output === ssaValue) {
+                return parsed;
+            }
+            // Also search in regions
+            if (parsed.regions) {
+                for (const region of parsed.regions) {
+                    for (const op of region) {
+                        if (op.output === ssaValue) {
+                            return op;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    showOpDetails(opId) {
+        console.log('showOpDetails called with opId:', opId, 'type:', typeof opId);
+        console.log('operationById map:', this.operationById);
+        console.log('operationById keys:', Object.keys(this.operationById));
+        
         const detailsDiv = document.getElementById('detailsContent');
+        
+        // Look up operation by ID
+        const parsed = this.operationById[opId];
+        console.log('Found operation:', parsed);
+        
+        if (!parsed) {
+            detailsDiv.innerHTML = `<p class="placeholder">Could not find operation with ID ${opId}</p>`;
+            return;
+        }
         
         let html = '<div class="detail-section">';
         html += `<h3>Operation: ${this.escapeHtml(parsed.opName)}</h3>`;
@@ -602,9 +688,10 @@ class MLIRViewer {
         }
         
         if (parsed.location) {
+            const inlinedLoc = this.inlineLocationAlias(parsed.location);
             html += '<div class="detail-item">';
             html += `<span class="detail-label">Location:</span>`;
-            html += `<span class="detail-value">${this.escapeHtml(parsed.location)}</span>`;
+            html += `<span class="detail-value">${this.escapeHtml(inlinedLoc)}</span>`;
             html += '</div>';
         }
         
