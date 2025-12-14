@@ -128,8 +128,17 @@ button:hover {
     resize: vertical;
 }
 
-#parseBtn {
+.editor-controls {
     margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    min-height: 40px;
+}
+
+#parseBtn {
+    flex-shrink: 0;
 }
 
 .viewer-section {
@@ -168,10 +177,26 @@ button:hover {
     cursor: pointer;
     text-decoration: underline;
     text-decoration-style: dotted;
+    transition: background-color 0.2s;
 }
 
 .ssa-value:hover {
     background-color: #264f78;
+}
+
+.ssa-highlighted {
+    background-color: #5a5a1a;
+    border-radius: 2px;
+    padding: 1px 2px;
+    box-shadow: 0 0 3px rgba(206, 145, 120, 0.3);
+}
+
+.ssa-current {
+    background-color: #6a6a2a !important;
+    border: 2px solid #ce9178;
+    border-radius: 2px;
+    padding: 0px 1px;
+    box-shadow: 0 0 5px rgba(206, 145, 120, 0.5);
 }
 
 .op-name {
@@ -267,4 +292,90 @@ button:hover {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #4e4e4e;
+}
+
+/* SSA Navigation Panel */
+.ssa-navigation {
+    background-color: #2d2d30;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    padding: 8px 12px;
+    align-items: center;
+    gap: 15px;
+    flex: 1;
+    min-width: 400px;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.ssa-navigation[style*="display: flex"],
+.ssa-navigation:not([style*="display: none"]) {
+    display: flex;
+    visibility: visible;
+    opacity: 1;
+}
+
+.ssa-nav-label {
+    color: #d4d4d4;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.ssa-nav-label strong {
+    color: #9cdcfe;
+    font-weight: bold;
+}
+
+.ssa-nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.nav-btn {
+    background-color: #3e3e42;
+    color: #d4d4d4;
+    border: 1px solid #555555;
+    padding: 4px 10px;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 14px;
+    font-weight: bold;
+    transition: background-color 0.2s;
+    min-width: 35px;
+}
+
+.nav-btn:hover:not(:disabled) {
+    background-color: #505050;
+}
+
+.nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.nav-btn-clear {
+    background-color: #5a1d1d;
+    color: #f48771;
+    border: 1px solid #6e2626;
+    padding: 4px 10px;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 14px;
+    font-weight: bold;
+    transition: background-color 0.2s;
+    margin-left: 5px;
+}
+
+.nav-btn-clear:hover {
+    background-color: #6e2626;
+}
+
+.ssa-counter {
+    color: #858585;
+    font-size: 13px;
+    padding: 0 8px;
+    min-width: 60px;
+    text-align: center;
 }

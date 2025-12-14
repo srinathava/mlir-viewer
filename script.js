@@ -9,6 +9,9 @@ class MLIRViewer {
             inlineAttrs: [],
             inlineTypeAttrs: []
         };
+        this.highlightedSSA = null; // Currently highlighted SSA value
+        this.ssaOccurrences = []; // Array of DOM elements for current SSA value
+        this.currentOccurrenceIndex = -1; // Current position in occurrences
         this.init();
     }
 
@@ -27,6 +30,13 @@ class MLIRViewer {
         document.getElementById('loadSample').addEventListener('click', () => this.loadSample());
         document.getElementById('toggleConfig').addEventListener('click', () => this.toggleConfig());
         document.getElementById('applyConfig').addEventListener('click', () => this.applyConfig());
+        
+        // SSA navigation controls
+        document.getElementById('ssaFirst').addEventListener('click', () => this.navigateSSA('first'));
+        document.getElementById('ssaPrev').addEventListener('click', () => this.navigateSSA('prev'));
+        document.getElementById('ssaNext').addEventListener('click', () => this.navigateSSA('next'));
+        document.getElementById('ssaLast').addEventListener('click', () => this.navigateSSA('last'));
+        document.getElementById('ssaClear').addEventListener('click', () => this.clearSSAHighlights());
     }
 
     toggleConfig() {
@@ -76,38 +86,27 @@ class MLIRViewer {
         }
     }
 
-    loadSample() {
-        const sample = `#loc1 = loc("example.mlir":10:5)
-#loc2 = loc("example.mlir":11:5)
-#loc3 = loc("example.mlir":12:5)
-#loc4 = loc("example.mlir":13:5)
-#loc5 = loc("example.mlir":14:5)
-#loc6 = loc("example.mlir":15:5)
-#loc7 = loc("example.mlir":16:5)
-#loc8 = loc("example.mlir":17:5)
-#loc9 = loc("example.mlir":18:5)
-
-%0 = "arith.constant"() {value = 42 : i32} : () -> i32 loc(#loc1)
-%1 = "arith.constant"() {value = 10 : i32} : () -> i32 loc(#loc2)
-%2 = "arith.addi"(%0, %1) : (i32, i32) -> i32 loc(#loc3)
-%result = "arith.muli"(%2, %1) {fastmath = "fast"} : (i32, i32) -> i32 loc(#loc4)
-%3 = "tensor.empty"() : () -> tensor<4x4xf32> loc(#loc5)
-%4 = "linalg.fill"(%result, %3) : (i32, tensor<4x4xf32>) -> tensor<4x4xf32> loc(#loc6)
-%5 = "tensor.cast"(%3) : (tensor<4x4xf32>) -> tensor<3x3xsi32, #foo.Attr<bufferLoc = global, attr2 = attr2val : attr2type>> loc(#loc7)
-%6 = "scf.if"(%result) ({
-  %7 = "arith.addi"(%0, %1) : (i32, i32) -> i32 loc(#loc8)
-  "scf.yield"(%7) : (i32) -> () loc(#loc9)
-}) : (i32) -> i32 loc(#loc7)`;
-        
-        document.getElementById('mlirInput').value = sample;
-        
-        // Load sample filters
-        document.getElementById('showTypes').checked = true;
-        document.getElementById('inlineAttrs').value = 'fastmath, value';
-        document.getElementById('inlineTypeAttrs').value = 'bufferLoc';
-        
-        // Apply the sample configuration
-        this.applyConfig();
+    async loadSample() {
+        try {
+            const response = await fetch('sample.mlir?t=' + Date.now());
+            if (!response.ok) {
+                throw new Error(`Failed to fetch sample: ${response.status}`);
+            }
+            const sample = await response.text();
+            
+            document.getElementById('mlirInput').value = sample;
+            
+            // Load sample filters
+            document.getElementById('showTypes').checked = true;
+            document.getElementById('inlineAttrs').value = 'fastmath, value';
+            document.getElementById('inlineTypeAttrs').value = 'bufferLoc';
+            
+            // Apply the sample configuration
+            this.applyConfig();
+        } catch (error) {
+            console.error('Failed to load sample:', error);
+            alert(`Failed to load sample MLIR file: ${error.message}\n\nPlease ensure sample.mlir is in the same directory.`);
+        }
     }
 
     parseAndDisplay() {
@@ -240,7 +239,7 @@ class MLIRViewer {
 
             // Output SSA value
             if (parsed.output) {
-                html += `<span class="ssa-value">${this.escapeHtml(parsed.output)}</span> = `;
+                html += `<span class="ssa-value" data-ssa="${this.escapeHtml(parsed.output)}">${this.escapeHtml(parsed.output)}</span> = `;
             }
 
             // Operation name - use operation ID
@@ -253,7 +252,7 @@ class MLIRViewer {
                 html += '(';
                 parsed.inputs.forEach((input, i) => {
                     if (i > 0) html += ', ';
-                    html += `<span class="ssa-value">${this.escapeHtml(input)}</span>`;
+                    html += `<span class="ssa-value" data-ssa="${this.escapeHtml(input)}">${this.escapeHtml(input)}</span>`;
                 });
                 html += ')';
             } else {
@@ -364,7 +363,7 @@ class MLIRViewer {
 
         // Output SSA value
         if (parsed.output) {
-            html += `<span class="ssa-value">${this.escapeHtml(parsed.output)}</span> = `;
+            html += `<span class="ssa-value" data-ssa="${this.escapeHtml(parsed.output)}">${this.escapeHtml(parsed.output)}</span> = `;
         }
 
         // Operation name - use operation ID for click handling
@@ -377,7 +376,7 @@ class MLIRViewer {
             html += '(';
             parsed.inputs.forEach((input, i) => {
                 if (i > 0) html += ', ';
-                html += `<span class="ssa-value" data-index="${indexStr}" data-type="input" data-input-idx="${i}">${this.escapeHtml(input)}</span>`;
+                html += `<span class="ssa-value" data-ssa="${this.escapeHtml(input)}" data-index="${indexStr}" data-type="input" data-input-idx="${i}">${this.escapeHtml(input)}</span>`;
             });
             html += ')';
         } else {
@@ -514,7 +513,8 @@ class MLIRViewer {
         // SSA value clicks
         document.querySelectorAll('.ssa-value').forEach(elem => {
             elem.addEventListener('click', (e) => {
-                const ssaValue = e.target.textContent.trim();
+                const ssaValue = e.target.dataset.ssa || e.target.textContent.trim();
+                this.highlightSSAValue(ssaValue, e.target);
                 this.showSSADetails(ssaValue);
             });
         });
@@ -526,6 +526,97 @@ class MLIRViewer {
                 this.showOpDetails(opId);
             });
         });
+    }
+
+    highlightSSAValue(ssaValue, clickedElement) {
+        // Clear previous highlights
+        this.clearSSAHighlights();
+        
+        // Find all occurrences of this SSA value
+        this.highlightedSSA = ssaValue;
+        this.ssaOccurrences = Array.from(document.querySelectorAll(`.ssa-value[data-ssa="${ssaValue}"]`));
+        
+        // Find which occurrence was clicked
+        this.currentOccurrenceIndex = this.ssaOccurrences.indexOf(clickedElement);
+        if (this.currentOccurrenceIndex === -1) {
+            this.currentOccurrenceIndex = 0;
+        }
+        
+        // Highlight all occurrences
+        this.ssaOccurrences.forEach((elem, idx) => {
+            elem.classList.add('ssa-highlighted');
+            if (idx === this.currentOccurrenceIndex) {
+                elem.classList.add('ssa-current');
+                // Don't auto-scroll - just highlight in place
+            }
+        });
+        
+        // Update navigation controls
+        this.updateNavigationControls();
+    }
+    
+    clearSSAHighlights() {
+        document.querySelectorAll('.ssa-highlighted').forEach(elem => {
+            elem.classList.remove('ssa-highlighted', 'ssa-current');
+        });
+        this.highlightedSSA = null;
+        this.ssaOccurrences = [];
+        this.currentOccurrenceIndex = -1;
+        this.updateNavigationControls();
+    }
+    
+    navigateSSA(direction) {
+        if (this.ssaOccurrences.length === 0) return;
+        
+        // Remove current highlight
+        if (this.currentOccurrenceIndex >= 0 && this.currentOccurrenceIndex < this.ssaOccurrences.length) {
+            this.ssaOccurrences[this.currentOccurrenceIndex].classList.remove('ssa-current');
+        }
+        
+        // Update index based on direction
+        if (direction === 'first') {
+            this.currentOccurrenceIndex = 0;
+        } else if (direction === 'prev') {
+            this.currentOccurrenceIndex = Math.max(0, this.currentOccurrenceIndex - 1);
+        } else if (direction === 'next') {
+            this.currentOccurrenceIndex = Math.min(this.ssaOccurrences.length - 1, this.currentOccurrenceIndex + 1);
+        } else if (direction === 'last') {
+            this.currentOccurrenceIndex = this.ssaOccurrences.length - 1;
+        }
+        
+        // Highlight current occurrence
+        const currentElem = this.ssaOccurrences[this.currentOccurrenceIndex];
+        currentElem.classList.add('ssa-current');
+        currentElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Update navigation controls
+        this.updateNavigationControls();
+    }
+    
+    updateNavigationControls() {
+        const navDiv = document.getElementById('ssaNavigation');
+        if (!navDiv) return;
+        
+        if (this.ssaOccurrences.length === 0) {
+            navDiv.style.display = 'none';
+            return;
+        }
+        
+        navDiv.style.display = 'flex';
+        document.getElementById('ssaValueName').textContent = this.highlightedSSA;
+        document.getElementById('ssaCounter').textContent =
+            `${this.currentOccurrenceIndex + 1} / ${this.ssaOccurrences.length}`;
+        
+        // Enable/disable buttons based on position
+        const firstBtn = document.getElementById('ssaFirst');
+        const prevBtn = document.getElementById('ssaPrev');
+        const nextBtn = document.getElementById('ssaNext');
+        const lastBtn = document.getElementById('ssaLast');
+        
+        firstBtn.disabled = this.currentOccurrenceIndex === 0;
+        prevBtn.disabled = this.currentOccurrenceIndex === 0;
+        nextBtn.disabled = this.currentOccurrenceIndex === this.ssaOccurrences.length - 1;
+        lastBtn.disabled = this.currentOccurrenceIndex === this.ssaOccurrences.length - 1;
     }
 
     showSSADetails(ssaValue) {

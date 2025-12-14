@@ -39,7 +39,20 @@
             <div class="editor-section">
                 <h2>MLIR Input</h2>
                 <textarea id="mlirInput" placeholder="Paste your MLIR code here..."></textarea>
-                <button id="parseBtn">Parse & Display</button>
+                <div class="editor-controls">
+                    <button id="parseBtn">Parse & Display</button>
+                    <div id="ssaNavigation" class="ssa-navigation" style="display: none;">
+                        <span class="ssa-nav-label">Highlighting: <strong id="ssaValueName"></strong></span>
+                        <div class="ssa-nav-controls">
+                            <button id="ssaFirst" class="nav-btn" title="First occurrence">&lt;&lt;</button>
+                            <button id="ssaPrev" class="nav-btn" title="Previous occurrence">&lt;</button>
+                            <span id="ssaCounter" class="ssa-counter">0 / 0</span>
+                            <button id="ssaNext" class="nav-btn" title="Next occurrence">&gt;</button>
+                            <button id="ssaLast" class="nav-btn" title="Last occurrence">&gt;&gt;</button>
+                            <button id="ssaClear" class="nav-btn-clear" title="Clear highlighting">✕</button>
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <div class="viewer-section">
