@@ -1,0 +1,1 @@
+%0 = "xrt.Constant"() {value = dense<[-208982, 155132]> : tensor<2xsi32>} : () -> tensor<2xsi32, #xml.XExt<bufferLoc =  global, bufferType =  L3_WEIGHT, fmt =  BIAS, addr = 0 : si64, originShape = [2], inferAsConstant = true>> loc(#loc3)

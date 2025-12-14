@@ -449,50 +449,112 @@ class MLIRViewer {
             return type;
         }
 
-        // Parse type attributes from angle brackets
-        // e.g., tensor<3x3xsi32, #foo.Attr<bufferLoc = global, attr2 = val>>
-        const match = type.match(/^([^<]+)<(.+)>$/);
-        if (!match) {
-            return type; // No attributes to filter
+        // Handle string types (for backward compatibility or simple types)
+        if (typeof type === 'string') {
+            return type;
         }
 
-        const baseType = match[1];
-        const content = match[2];
-
-        // Find attribute section (starts with #)
-        const attrMatch = content.match(/(.*?)(#[^<]+<([^>]+)>)(.*)$/);
-        if (!attrMatch) {
-            return type; // No attributes found
+        // Handle structured type objects
+        if (type.kind === 'simple') {
+            return type.value;
         }
 
-        const beforeAttr = attrMatch[1];
-        const fullAttrSection = attrMatch[2];
-        const attrContent = attrMatch[3];
-        const afterAttr = attrMatch[4];
+        if (type.kind === 'complex') {
+            const content = type.content;
+            
+            // If no hash types, just return the string representation
+            if (!content.hashTypes || content.hashTypes.length === 0) {
+                return `${type.base}<${content.text || content}>`;
+            }
 
-        // Parse attributes
-        const attrs = attrContent.split(',').map(s => s.trim());
-        
-        // Filter attributes based on config if specified
-        let filteredAttrs = attrs;
-        if (this.config.inlineTypeAttrs.length > 0) {
-            filteredAttrs = attrs.filter(attr => {
-                const key = attr.split('=')[0].trim();
-                return this.config.inlineTypeAttrs.includes(key);
-            });
+            // Filter hash type attributes based on config
+            const filteredAttrStrings = content.hashTypes.map(hashType => {
+                let filteredAttrs = {};
+
+                if (this.config.inlineTypeAttrs.length > 0) {
+                    // Only include specified attributes (supports nested paths like "sharding.begin2")
+                    this.config.inlineTypeAttrs.forEach(path => {
+                        const value = this.getNestedValue(hashType.attributes, path);
+                        if (value !== undefined) {
+                            this.setNestedValue(filteredAttrs, path, value);
+                        }
+                    });
+                } else {
+                    // Include all attributes
+                    filteredAttrs = hashType.attributes;
+                }
+
+                if (Object.keys(filteredAttrs).length === 0) {
+                    return null; // Skip this hash type
+                }
+
+                // Reconstruct attributes in compact form (without hash type wrapper)
+                return this.stringifyAttributes(filteredAttrs);
+            }).filter(h => h !== null);
+
+            // Build the final type string
+            const textContent = content.text || '';
+            
+            if (filteredAttrStrings.length === 0) {
+                // No hash types to show
+                return `${type.base}<${textContent}>`;
+            }
+
+            // Combine text content with filtered attributes (compact form)
+            const parts = [textContent, ...filteredAttrStrings].filter(p => p);
+            return `${type.base}<${parts.join(', ')}>`;
         }
 
-        if (filteredAttrs.length === 0) {
-            // No attributes to show, remove the attribute section
-            const filtered = beforeAttr.trim().replace(/,\s*$/, '');
-            return `${baseType}<${filtered}${afterAttr}>`;
-        }
+        // Fallback for unknown type structure
+        return String(type);
+    }
 
-        // Reconstruct with simplified format: just show key=value pairs
-        const simplifiedAttrs = filteredAttrs.join(', ');
-        const beforeClean = beforeAttr.trim();
-        const separator = beforeClean && !beforeClean.endsWith(',') ? ', ' : '';
-        return `${baseType}<${beforeClean}${separator}${simplifiedAttrs}${afterAttr}>`;
+    getNestedValue(obj, path) {
+        const parts = path.split('.');
+        let current = obj;
+        for (const part of parts) {
+            if (current && typeof current === 'object' && part in current) {
+                current = current[part];
+            } else {
+                return undefined;
+            }
+        }
+        return current;
+    }
+
+    setNestedValue(obj, path, value) {
+        const parts = path.split('.');
+        let current = obj;
+        for (let i = 0; i < parts.length - 1; i++) {
+            const part = parts[i];
+            if (!(part in current)) {
+                current[part] = {};
+            }
+            current = current[part];
+        }
+        current[parts[parts.length - 1]] = value;
+    }
+
+    stringifyAttributes(attrs, indent = '') {
+        const parts = [];
+        for (const [key, value] of Object.entries(attrs)) {
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                // Nested object
+                const nested = this.stringifyAttributes(value, indent + '  ');
+                parts.push(`${key} = <${nested}>`);
+            } else if (Array.isArray(value)) {
+                // Array
+                parts.push(`${key} = [${value.join(', ')}]`);
+            } else if (typeof value === 'object' && value.value !== undefined && value.type !== undefined) {
+                // Typed value like {value: 0, type: "si64"}
+                parts.push(`${key} = ${value.value} : ${value.type}`);
+            } else if (typeof value === 'boolean') {
+                parts.push(`${key} = ${value}`);
+            } else {
+                parts.push(`${key} = ${value}`);
+            }
+        }
+        return parts.join(', ');
     }
 
     inlineLocationAlias(location) {
@@ -634,7 +696,8 @@ class MLIRViewer {
         html += `<h3>SSA Value: ${this.escapeHtml(ssaValue)}</h3>`;
         html += '<div class="detail-item">';
         html += `<span class="detail-label">Type:</span>`;
-        html += `<span class="detail-value type-info">${this.escapeHtml(definition.outputType || 'unknown')}</span>`;
+        const typeStr = this.filterTypeAttributes(definition.outputType) || 'unknown';
+        html += `<span class="detail-value type-info">${this.escapeHtml(typeStr)}</span>`;
         html += '</div>';
         html += '<div class="detail-item">';
         html += `<span class="detail-label">Defined by:</span>`;
@@ -758,9 +821,10 @@ class MLIRViewer {
             html += '<div style="margin-top: 8px;">';
             parsed.inputs.forEach((input, i) => {
                 const type = parsed.inputTypes[i] || 'unknown';
+                const typeStr = this.filterTypeAttributes(type);
                 html += `<div style="margin-left: 20px; margin-bottom: 4px;">`;
                 html += `<span class="ssa-value">${this.escapeHtml(input)}</span> : `;
-                html += `<span class="type-info">${this.escapeHtml(type)}</span>`;
+                html += `<span class="type-info">${this.escapeHtml(typeStr)}</span>`;
                 html += `</div>`;
             });
             html += '</div>';
@@ -773,7 +837,8 @@ class MLIRViewer {
             html += `<span class="detail-label">Output:</span>`;
             html += `<span class="detail-value">`;
             html += `<span class="ssa-value">${this.escapeHtml(parsed.output)}</span> : `;
-            html += `<span class="type-info">${this.escapeHtml(parsed.outputType || 'unknown')}</span>`;
+            const outputTypeStr = this.filterTypeAttributes(parsed.outputType) || 'unknown';
+            html += `<span class="type-info">${this.escapeHtml(outputTypeStr)}</span>`;
             html += `</span>`;
             html += '</div>';
         }
