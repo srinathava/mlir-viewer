@@ -1,14 +1,15 @@
-// MLIR PEG.js Grammar v2.0 - Fixed for PEG.js 0.7.0
+// MLIR PEG.js Grammar v3.0 - Fixed for PEG.js 0.7.0
 // Parses MLIR operations in the format:
 // %out = "dialect.OpName"(%in1, %in2) {attr-dict}: (type1, type2) -> type_out loc(#loc)
-// Changes: SSA values can start with numbers, removed text() calls
+// Changes: SSA values can start with numbers, removed text() calls, support regions and empty types
 
 {
-  function buildOperation(output, opName, inputs, attrs, types, loc) {
+  function buildOperation(output, opName, inputs, attrs, types, loc, regions) {
     return {
       output: output,
       opName: opName,
       inputs: inputs || [],
+      regions: regions || [],
       attributes: attrs || {},
       inputTypes: types ? types.inputs : [],
       outputType: types ? types.output : null,
@@ -21,8 +22,11 @@ Start
   = _ ops:Operation* _ { return ops; }
 
 Operation
-  = output:SSAValue _ "=" _ opName:OpName _ inputs:InputList? _ attrs:AttrDict? _ types:TypeSignature? _ loc:Location? _ {
-      return buildOperation(output, opName, inputs, attrs, types, loc);
+  = output:SSAValue _ "=" _ opName:OpName _ inputs:InputList? _ regions:RegionList? _ attrs:AttrDict? _ types:TypeSignature? _ loc:Location? _ {
+      return buildOperation(output, opName, inputs, attrs, types, loc, regions);
+    }
+  / opName:OpName _ inputs:InputList? _ regions:RegionList? _ attrs:AttrDict? _ types:TypeSignature? _ loc:Location? _ {
+      return buildOperation(null, opName, inputs, attrs, types, loc, regions);
     }
 
 SSAValue
@@ -46,6 +50,15 @@ SSAValueList
   = first:SSAValue rest:(_ "," _ SSAValue)* {
       return [first].concat(rest.map(r => r[3]));
     }
+
+RegionList
+  = "(" _ regions:Region+ _ ")" { return regions; }
+
+Region
+  = "{" _ ops:OperationLine* _ "}" _ { return ops; }
+
+OperationLine
+  = _ op:Operation _ { return op; }
 
 AttrDict
   = "{" _ attrs:AttrList? _ "}" { 
@@ -85,9 +98,13 @@ NumberLiteral
     }
 
 TypeSignature
-  = ":" _ "(" _ inputs:TypeList? _ ")" _ "->" _ output:Type {
+  = ":" _ "(" _ inputs:TypeList? _ ")" _ "->" _ output:TypeOrEmpty {
       return { inputs: inputs || [], output: output };
     }
+
+TypeOrEmpty
+  = "(" _ ")" { return "()"; }
+  / Type
 
 TypeList
   = first:Type rest:(_ "," _ Type)* {
