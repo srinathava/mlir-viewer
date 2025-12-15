@@ -444,7 +444,7 @@ class MLIRViewer {
         });
     }
 
-    filterTypeAttributes(type) {
+    formatType(type, applyFilter = true) {
         if (!type) {
             return type;
         }
@@ -467,29 +467,30 @@ class MLIRViewer {
                 return `${type.base}<${content.text || content}>`;
             }
 
-            // Filter hash type attributes based on config
+            // Filter or show all hash type attributes based on applyFilter flag
             const filteredAttrStrings = content.hashTypes.map(hashType => {
-                let filteredAttrs = {};
+                let attrsToShow = {};
 
-                if (this.config.inlineTypeAttrs.length > 0) {
-                    // Only include specified attributes (supports nested paths like "sharding.begin2")
+                if (applyFilter && this.config.inlineTypeAttrs.length > 0) {
+                    // Only include specified attributes (supports nested paths like "sharding.dims")
                     this.config.inlineTypeAttrs.forEach(path => {
                         const value = this.getNestedValue(hashType.attributes, path);
                         if (value !== undefined) {
-                            this.setNestedValue(filteredAttrs, path, value);
+                            this.setNestedValue(attrsToShow, path, value);
                         }
                     });
                 } else {
                     // Include all attributes
-                    filteredAttrs = hashType.attributes;
+                    attrsToShow = hashType.attributes;
                 }
 
-                if (Object.keys(filteredAttrs).length === 0) {
+                if (Object.keys(attrsToShow).length === 0) {
                     return null; // Skip this hash type
                 }
 
                 // Reconstruct attributes in compact form (without hash type wrapper)
-                return this.stringifyAttributes(filteredAttrs);
+                // Use flattening for filtered view (simplified), keep nested for unfiltered (details)
+                return this.stringifyAttributes(attrsToShow, '', applyFilter);
             }).filter(h => h !== null);
 
             // Build the final type string
@@ -507,6 +508,14 @@ class MLIRViewer {
 
         // Fallback for unknown type structure
         return String(type);
+    }
+
+    filterTypeAttributes(type) {
+        return this.formatType(type, true);
+    }
+
+    formatTypeUnfiltered(type) {
+        return this.formatType(type, false);
     }
 
     getNestedValue(obj, path) {
@@ -535,23 +544,43 @@ class MLIRViewer {
         current[parts[parts.length - 1]] = value;
     }
 
-    stringifyAttributes(attrs, indent = '') {
+    stringifyAttributes(attrs, indent = '', flatten = true, prefix = '') {
         const parts = [];
         for (const [key, value] of Object.entries(attrs)) {
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+            
             if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                // Nested object
-                const nested = this.stringifyAttributes(value, indent + '  ');
-                parts.push(`${key} = <${nested}>`);
+                if (value.value !== undefined && value.type !== undefined) {
+                    // Typed value like {value: 0, type: "si64"}
+                    if (flatten) {
+                        // Flatten: addr.value = 0, addr.type = si64
+                        parts.push(`${fullKey}.value = ${value.value}`);
+                        parts.push(`${fullKey}.type = ${value.type}`);
+                    } else {
+                        // Keep nested: addr = {value: 0, type: "si64"}
+                        parts.push(`${fullKey} = ${value.value} : ${value.type}`);
+                    }
+                } else {
+                    // Nested object
+                    if (flatten) {
+                        // Flatten nested objects into dot notation
+                        const nested = this.stringifyAttributes(value, indent, flatten, fullKey);
+                        if (nested) {
+                            parts.push(nested);
+                        }
+                    } else {
+                        // Keep nested structure
+                        const nested = this.stringifyAttributes(value, indent + '  ', flatten, '');
+                        parts.push(`${fullKey} = <${nested}>`);
+                    }
+                }
             } else if (Array.isArray(value)) {
                 // Array
-                parts.push(`${key} = [${value.join(', ')}]`);
-            } else if (typeof value === 'object' && value.value !== undefined && value.type !== undefined) {
-                // Typed value like {value: 0, type: "si64"}
-                parts.push(`${key} = ${value.value} : ${value.type}`);
+                parts.push(`${fullKey} = [${value.join(', ')}]`);
             } else if (typeof value === 'boolean') {
-                parts.push(`${key} = ${value}`);
+                parts.push(`${fullKey} = ${value}`);
             } else {
-                parts.push(`${key} = ${value}`);
+                parts.push(`${fullKey} = ${value}`);
             }
         }
         return parts.join(', ');
@@ -696,7 +725,7 @@ class MLIRViewer {
         html += `<h3>SSA Value: ${this.escapeHtml(ssaValue)}</h3>`;
         html += '<div class="detail-item">';
         html += `<span class="detail-label">Type:</span>`;
-        const typeStr = this.filterTypeAttributes(definition.outputType) || 'unknown';
+        const typeStr = this.formatTypeUnfiltered(definition.outputType) || 'unknown';
         html += `<span class="detail-value type-info">${this.escapeHtml(typeStr)}</span>`;
         html += '</div>';
         html += '<div class="detail-item">';
@@ -821,7 +850,7 @@ class MLIRViewer {
             html += '<div style="margin-top: 8px;">';
             parsed.inputs.forEach((input, i) => {
                 const type = parsed.inputTypes[i] || 'unknown';
-                const typeStr = this.filterTypeAttributes(type);
+                const typeStr = this.formatTypeUnfiltered(type);
                 html += `<div style="margin-left: 20px; margin-bottom: 4px;">`;
                 html += `<span class="ssa-value">${this.escapeHtml(input)}</span> : `;
                 html += `<span class="type-info">${this.escapeHtml(typeStr)}</span>`;
@@ -837,7 +866,7 @@ class MLIRViewer {
             html += `<span class="detail-label">Output:</span>`;
             html += `<span class="detail-value">`;
             html += `<span class="ssa-value">${this.escapeHtml(parsed.output)}</span> : `;
-            const outputTypeStr = this.filterTypeAttributes(parsed.outputType) || 'unknown';
+            const outputTypeStr = this.formatTypeUnfiltered(parsed.outputType) || 'unknown';
             html += `<span class="type-info">${this.escapeHtml(outputTypeStr)}</span>`;
             html += `</span>`;
             html += '</div>';
