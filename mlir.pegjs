@@ -276,11 +276,14 @@ SimpleType
     }
 
 Location
-  = "loc(" _ loc:LocationRef _ ")" { return loc; }
+  = "loc(" _ loc:LocationRef ")" { return loc; }
 
 LocationRef
   = "#" ref:Identifier digits:[0-9]* { return '#' + ref + digits.join(''); }
-  / chars:[^)]+ { return chars.join(''); }
+  / chars:LocationContent { return chars; }
+
+LocationContent
+  = chars:(!(")" ![^)]) .)+ { return chars.map(c => c[1]).join('').trim(); }
 
 Identifier
   = first:[a-zA-Z_] rest:[a-zA-Z0-9_]* { return first + rest.join(''); }

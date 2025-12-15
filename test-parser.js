@@ -32,6 +32,10 @@ const testCases = [
     }, {
       "mhlo.barrier"(%21) : (tensor<2xsi32, #mhlo.TypeExt<memorySpace = local, layout = row_major, encoding = packed, sharding = <dims = [0, 0, 0, 0], strides = [2, 0, 0, 0]>, replication = <dims = [0, 0, 0, 0], strides = [2, 0, 0, 0]>, offset = 3195392 : si64, shape = [2]>>) -> () loc(#loc34)
     }) {transpose_b = 0 : i64} : (tensor<1x1x1536xsi13, #mhlo.TypeExt<memorySpace = local, layout = row_major, encoding = dense, sharding = <dims = [0, 0, 0, 0], strides = [1, 0, 0, 0]>, replication = <dims = [0, 0, 0, 0], strides = [1, 0, 0, 0]>, offset = 2996736 : si64, shape = [1, 1, 1536]>>, tensor<1536x2xsi8, #mhlo.TypeExt<memorySpace = local, layout = row_major, encoding = dense, sharding = <dims = [0, 2, 2, 2], strides = [2, 0, 0, 0]>, replication = <dims = [0, 2, 2, 2], strides = [2, 0, 0, 0]>, offset = 3145728 : si64, shape = [1536, 2]>>, tensor<2xsi32, #mhlo.TypeExt<memorySpace = local, layout = row_major, encoding = compressed, sharding = <dims = [0, 2, 2, 2], strides = [2, 0, 0, 0]>, replication = <dims = [0, 2, 2, 2], strides = [2, 0, 0, 0]>, offset = 3194880 : si64, shape = [2]>>) -> tensor<1x1x2xsi10, #mhlo.TypeExt<memorySpace = local, layout = row_major, encoding = dense, sharding = <dims = [0, 2, 2, 2], strides = [2, 0, 0, 0]>, replication = <dims = [0, 2, 2, 2], strides = [2, 0, 0, 0]>, offset = 6288896 : si64, shape = [1, 1, 2]>> loc(#loc31)`
+    },
+    {
+        name: 'Location with closing paren in path',
+        input: '%0 = "arith.constant"() {value = 42 : i32} : () -> i32 loc("/path/to/file(with)parens.mlir":10:5)'
     }
 ];
 
